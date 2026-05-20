@@ -163,38 +163,157 @@ class MonitorRunner {
     }
   }
 
-  // ── WALLET_TRACK (check for new outgoing txs from tracked wallet) ────
+  // ── WALLET_TRACK (decode txs + mirror trading) ──────────────────────
   async _checkWalletTrack(monitor) {
     const params = typeof monitor.params === 'string' ? JSON.parse(monitor.params) : monitor.params;
-    const { watchAddress } = params;
+    const { walletAddress, mirror, mirrorAmountUsd } = params;
 
-    // Use DEXScreener to check if the tracked wallet has recent activity
-    // Simpler approach: check recent trades in our DB for this address or use provider
     const provider = new ethers.JsonRpcProvider(config.base.rpcUrl);
     const currentBlock = await provider.getBlockNumber();
 
-    // Check last 100 blocks for outgoing txs
-    const fromBlock = currentBlock - 100;
-    const lastCheckedBlock = params._lastBlock || fromBlock;
+    // Resume from last processed block; on first run scan last 100 blocks
+    const lastBlock = params._lastBlock || (currentBlock - 100);
+    const fromBlock = lastBlock + 1;
 
-    // Get transaction count diff to detect activity
-    const currentNonce = await provider.getTransactionCount(watchAddress, currentBlock);
-    const prevNonce = params._lastNonce ?? currentNonce;
+    // Already up to date
+    if (fromBlock > currentBlock) return;
 
-    if (currentNonce > prevNonce) {
-      await this._notify(monitor.user.telegramId, monitor.userId,
-        `👀 *Wallet Activity*\n\n` +
-        `Wallet: \`${watchAddress}\`\n` +
-        `New transactions: ${currentNonce - prevNonce}\n\n` +
-        `View: ${config.base.explorerAddressUrl}/${watchAddress}`
-      );
+    // Cap scan range to 500 blocks to avoid RPC limits
+    const toBlock = Math.min(currentBlock, fromBlock + 499);
+
+    // Known DEX routers on Base (lowercase)
+    const DEX_ROUTERS = new Set([
+      '0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad', // Uniswap Universal Router
+      '0x2626664c2603336e57b271c5c0b26f421741e481', // Uniswap V3 Router
+      '0xdef1c0ded9bec7f1a1670819833240f027b25eff', // 0x Exchange Proxy
+      '0x1111111254eeb25477b68fb85ed929f73a960582', // 1inch Router
+    ]);
+
+    // WETH on Base — skip mirroring WETH transfers
+    const WETH = '0x4200000000000000000000000000000000000006';
+
+    // ERC-20 Transfer(address indexed from, address indexed to, uint256 value)
+    const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+    const paddedWallet = ethers.zeroPadValue(walletAddress, 32);
+
+    // Fetch Transfer logs where tracked wallet is sender OR receiver
+    const [sentLogs, receivedLogs] = await Promise.all([
+      provider.getLogs({
+        fromBlock,
+        toBlock,
+        topics: [TRANSFER_TOPIC, paddedWallet],       // from = wallet
+      }),
+      provider.getLogs({
+        fromBlock,
+        toBlock,
+        topics: [TRANSFER_TOPIC, null, paddedWallet],  // to = wallet
+      }),
+    ]);
+
+    // Collect unique tx hashes from all matching logs
+    const txHashSet = new Set();
+    const allRelevantLogs = [...sentLogs, ...receivedLogs];
+    for (const log of allRelevantLogs) {
+      txHashSet.add(log.transactionHash);
     }
 
-    // Update params with last known state
+    const walletLower = walletAddress.toLowerCase();
+
+    // Process each transaction
+    for (const txHash of txHashSet) {
+      try {
+        const tx = await provider.getTransaction(txHash);
+        if (!tx || !tx.to) continue;
+
+        const routerAddr = tx.to.toLowerCase();
+        // Only interested in transactions that interact with a DEX router
+        if (!DEX_ROUTERS.has(routerAddr)) continue;
+
+        // Find the Transfer event involving the tracked wallet
+        const txLogs = allRelevantLogs.filter(l => l.transactionHash === txHash);
+
+        let side = null;
+        let tokenAddress = null;
+
+        for (const log of txLogs) {
+          // topics[1] = from, topics[2] = to (both left-padded 32-byte addresses)
+          const fromAddr = ethers.getAddress('0x' + log.topics[1].slice(26));
+          const toAddr = ethers.getAddress('0x' + log.topics[2].slice(26));
+
+          if (toAddr.toLowerCase() === walletLower) {
+            // Wallet received tokens → BUY
+            side = 'buy';
+            tokenAddress = log.address; // emitting contract = token
+            break;
+          } else if (fromAddr.toLowerCase() === walletLower) {
+            // Wallet sent tokens → SELL
+            side = 'sell';
+            tokenAddress = log.address;
+            // Keep scanning — a multi-hop buy might also have wallet as sender
+            // of an intermediate token, so prefer the "to" match if it comes later
+          }
+        }
+
+        if (!side || !tokenAddress) continue;
+        if (tokenAddress.toLowerCase() === WETH.toLowerCase()) continue;
+
+        // Build alert message
+        const sideEmoji = side === 'buy' ? '🟢' : '🔴';
+        const sideLabel = side.toUpperCase();
+
+        const baseMessage =
+          `${sideEmoji} *Wallet Tracker Alert*\n\n` +
+          `Tracked wallet made a *${sideLabel}*:\n` +
+          `Token: \`${tokenAddress}\`\n` +
+          `Tx: \`${txHash}\`\n` +
+          `Block: ${tx.blockNumber}\n\n` +
+          `View: ${config.base.explorerTxUrl}/${txHash}`;
+
+        // ── Mirror trading: auto-buy when tracked wallet buys ──
+        if (mirror && side === 'buy' && this.tradeOrchestrator) {
+          const buyAmountUsd = mirrorAmountUsd || 5;
+
+          // Notify with pending mirror status
+          await this._notify(monitor.user.telegramId, monitor.userId,
+            baseMessage + `\n\n🪞 Mirror buy executing: $${buyAmountUsd}…`
+          );
+
+          try {
+            const result = await this.tradeOrchestrator.executeBuy({
+              userId: monitor.userId,
+              tokenAddress,
+              amountUsd: buyAmountUsd,
+              slippageBps: config.trade.defaultSlippageBps,
+            });
+
+            await this._notify(monitor.user.telegramId, monitor.userId,
+              `🪞 *Mirror Buy Result*\n\n` +
+              `Token: \`${tokenAddress}\`\n` +
+              `Amount: $${buyAmountUsd}\n` +
+              `Result: ${result.success ? '✅ Success' : '❌ ' + result.error}`
+            );
+          } catch (mirrorErr) {
+            logger.error('Mirror buy failed', { monitorId: monitor.id, error: mirrorErr.message });
+            await this._notify(monitor.user.telegramId, monitor.userId,
+              `🪞 *Mirror Buy Failed*\n\n` +
+              `Token: \`${tokenAddress}\`\n` +
+              `Error: ${mirrorErr.message}`
+            );
+          }
+        } else {
+          // Standard notification (no mirror)
+          await this._notify(monitor.user.telegramId, monitor.userId, baseMessage);
+        }
+      } catch (txErr) {
+        logger.error('Wallet tracker tx processing failed', { txHash, error: txErr.message });
+      }
+    }
+
+    // Persist last processed block so we don't re-scan
     await prisma.monitor.update({
       where: { id: monitor.id },
       data: {
-        params: { ...params, _lastBlock: currentBlock, _lastNonce: currentNonce },
+        params: { ...params, _lastBlock: toBlock },
       },
     });
   }
@@ -202,9 +321,9 @@ class MonitorRunner {
   // ── DCA (Dollar Cost Average — buy periodically) ─────────────────────
   async _checkDca(monitor) {
     const params = typeof monitor.params === 'string' ? JSON.parse(monitor.params) : monitor.params;
-    const { tokenAddress, amountUsd, intervalHours, totalExecutions, executionsCompleted } = params;
+    const { tokenAddress, amountUsd, intervalSeconds, totalExecutions, executedCount } = params;
 
-    const completed = executionsCompleted || 0;
+    const completed = executedCount || 0;
     const total = totalExecutions || 0;
 
     if (total > 0 && completed >= total) {
@@ -224,12 +343,12 @@ class MonitorRunner {
       });
 
       const newCompleted = completed + 1;
-      const nextRun = new Date(Date.now() + (intervalHours || 24) * 3600_000);
+      const nextRun = new Date(Date.now() + (intervalSeconds || 86400) * 1000);
 
       await prisma.monitor.update({
         where: { id: monitor.id },
         data: {
-          params: { ...params, executionsCompleted: newCompleted },
+          params: { ...params, executedCount: newCompleted },
           nextRunAt: total > 0 && newCompleted >= total ? undefined : nextRun,
           status: total > 0 && newCompleted >= total ? 'TRIGGERED' : 'WATCHING',
           triggeredAt: total > 0 && newCompleted >= total ? new Date() : undefined,

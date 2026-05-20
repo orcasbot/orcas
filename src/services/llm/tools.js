@@ -341,6 +341,32 @@ const ALL_TOOLS = [
     },
   },
   {
+    name: 'set_wallet_tracker',
+    description: 'Track a wallet address and optionally mirror their trades automatically.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        walletAddress: {
+          type: 'string',
+          description: 'The wallet address to track on Base chain',
+        },
+        mirror: {
+          type: 'boolean',
+          description: 'Whether to automatically copy/mirror their trades',
+        },
+        mirrorAmountUsd: {
+          type: 'number',
+          description: 'USD amount per mirror trade (defaults to your buy amount setting)',
+        },
+        description: {
+          type: 'string',
+          description: 'Custom note (e.g. "Whale #1", "Alpha caller @username")',
+        },
+      },
+      required: ['walletAddress', 'mirror'],
+    },
+  },
+  {
     name: 'list_monitors',
     description: 'List active price alerts, limit orders, and wallet trackers.',
     input_schema: {
@@ -358,6 +384,49 @@ const ALL_TOOLS = [
         monitorId: { type: 'string', description: 'Monitor ID from list_monitors' },
       },
       required: ['monitorId'],
+    },
+  },
+  {
+    name: 'set_dca',
+    description: 'Set up a DCA (Dollar-Cost Averaging) plan to automatically buy a token at regular intervals',
+    input_schema: {
+      type: 'object',
+      properties: {
+        tokenAddress: {
+          type: 'string',
+          description: 'Token contract address to DCA into',
+        },
+        tokenSymbol: {
+          type: 'string',
+          description: 'Token symbol (e.g. BRETT, DEGEN)',
+        },
+        amountUsd: {
+          type: 'number',
+          description: 'Amount in USD to buy each interval',
+        },
+        intervalSeconds: {
+          type: 'number',
+          description: 'Time between buys in seconds (e.g. 3600 for hourly, 86400 for daily)',
+        },
+        totalExecutions: {
+          type: 'number',
+          description: 'Total number of buys to execute',
+        },
+        description: {
+          type: 'string',
+          description: 'Custom note for this DCA plan',
+        },
+      },
+      required: ['tokenAddress', 'tokenSymbol', 'amountUsd', 'intervalSeconds', 'totalExecutions'],
+    },
+  },
+  {
+    name: 'list_dca',
+    description: 'List all active DCA (Dollar-Cost Averaging) plans',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: [],
     },
   },
 ];

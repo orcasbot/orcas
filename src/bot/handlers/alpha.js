@@ -15,7 +15,7 @@ async function handleAlphaMessage(callerUsername, groupUsername, messageText, bo
     const group = groupUsername.replace(/^@/, '').toLowerCase();
 
     // Find all alpha caller subscriptions matching this caller + group
-    const subscriptions = await prisma.alphaCaller.findMany({
+    const subscriptions = await prisma.alphaGroup.findMany({
       where: {
         callerUsername: caller,
         groupUsername: group,

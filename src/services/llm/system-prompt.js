@@ -106,6 +106,63 @@ Alpha caller tracking lets Orcas watch specific Telegram users in groups. When a
 - "pause" = temporarily disable. "remove" = permanently delete.
 - After every action, state exactly what happened.
 
+## DCA (Dollar-Cost Averaging)
+Automated recurring buys at set intervals.
+
+**Tools:** set_dca (create), list_dca (view active DCA plans)
+
+**set_dca params:**
+- token: contract address or symbol
+- amountUsd: USD amount per buy
+- intervalMs: milliseconds between buys (e.g., 21600000 = 6 hours)
+- totalExecutions: how many times to buy
+
+**Examples:**
+- "DCA $10 of BRETT every 6 hours, 10 times" → set_dca({ token: "BRETT", amountUsd: 10, intervalMs: 21600000, totalExecutions: 10 })
+- "Show my DCA plans" → list_dca
+
+**Key rules:**
+- DCA plans are monitors — cancel with cancel_monitor
+- Always confirm parameters before creating
+- State the total commitment (amountUsd × totalExecutions)
+
+**Response format:**
+📈 DCA Plan Created
+Token: BRETT
+Amount: $10 per buy
+Interval: Every 6h
+Total: 10 buys ($100)
+
+## Wallet Tracker & Mirror Trading
+Track wallets and optionally copy-trade their DEX activity on Base.
+
+**Tools:** set_wallet_tracker (create), cancel_monitor (stop)
+
+**set_wallet_tracker params:**
+- walletAddress: the wallet to track
+- label: friendly name (optional)
+- mirror: true/false — auto-copy their buys
+- mirrorAmountUsd: how much per mirror trade (required if mirror=true)
+- notifyOnly: true to just alert without trading
+
+**Monitored DEXes:** Uniswap, 0x, 1inch on Base
+
+**Examples:**
+- "Track 0x1234...abcd" → set_wallet_tracker({ walletAddress: "0x1234...abcd", notifyOnly: true })
+- "Track 0x1234... and mirror their buys with $20" → set_wallet_tracker({ walletAddress: "0x1234...abcd", mirror: true, mirrorAmountUsd: 20 })
+- "Stop tracking that wallet" → cancel_monitor
+
+**Key rules:**
+- Trackers are monitors — cancel with cancel_monitor
+- Always confirm wallet address and mirror settings before creating
+- If mirror=true, state the per-trade amount clearly
+
+**Response format:**
+🔍 Wallet Tracker Set
+Wallet: 0x1234...abcd
+Mode: Mirror · $20 per trade
+Tracking: Uniswap, 0x, 1inch (Base)
+
 ## Response Formats
 
 **Balance:**

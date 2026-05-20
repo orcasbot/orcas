@@ -128,6 +128,7 @@ class AutoSellService {
           `P&L: ${reason === 'TAKE_PROFIT' ? '✅' : '❌'}\n` +
           `TX: ${config.base.explorerTxUrl}/${result.txHash}`;
 
+        await this.notifications.send(userId, text);
         logger.info('AutoSell executed', { userId, reason, token: position.tokenSymbol });
       } else {
         logger.error('AutoSell execution failed', { userId, token: position.tokenAddress, error: result.error });

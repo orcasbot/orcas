@@ -111,7 +111,7 @@ class TradeOrchestrator {
           },
         });
 
-        const result = {
+        const confirmedResult = {
           success: true,
           tradeId: trade.id,
           txHash: result.txHash,
@@ -121,10 +121,10 @@ class TradeOrchestrator {
         };
 
         if (this.notifyUser) {
-          this.notifyUser(userId, 'trade:confirmed', result);
+          this.notifyUser(userId, 'trade:confirmed', confirmedResult);
         }
 
-        return result;
+        return confirmedResult;
       } else {
         await prisma.trade.update({
           where: { id: trade.id },

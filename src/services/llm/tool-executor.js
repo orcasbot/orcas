@@ -479,6 +479,14 @@ async function executeTool(toolName, args, userId) {
       return { success: true, monitorId: monitor.id, message: `DCA set: $${args.amountUsd} into ${args.tokenSymbol || 'Token'} every ${args.intervalSeconds}s` };
     }
 
+    case 'list_dca': {
+      const dcaMonitors = await prisma.monitor.findMany({
+        where: { userId, type: 'DCA', status: 'WATCHING' },
+        orderBy: { createdAt: 'desc' },
+      });
+      return { dcaPlans: dcaMonitors };
+    }
+
     case 'list_monitors': {
       const monitors = await prisma.monitor.findMany({
         where: { userId, status: 'WATCHING' },
