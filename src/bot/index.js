@@ -8,7 +8,7 @@ const logger = require('../utils/logger');
 const prisma = require('../lib/prisma');
 const conversationManager = require('../services/llm/conversation-manager');
 
-function createBot(claudeClient, llmRateLimiter) {
+function createBot(llmClient, llmRateLimiter) {
   const bot = new Bot(config.telegram.botToken);
 
   // Middleware: parse user
@@ -44,7 +44,7 @@ function createBot(claudeClient, llmRateLimiter) {
 
     await conversationManager.addMessage(telegramId, 'user', '/start');
 
-    const response = await claudeClient.processMessage(
+    const response = await llmClient.processMessage(
       user,
       await conversationManager.getHistory(telegramId),
       user.id
@@ -99,7 +99,7 @@ function createBot(claudeClient, llmRateLimiter) {
       await conversationManager.addMessage(telegramId, 'user', message);
 
       // Process through Claude
-      const response = await claudeClient.processMessage(
+      const response = await llmClient.processMessage(
         user,
         await conversationManager.getHistory(telegramId),
         user.id

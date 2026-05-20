@@ -106,11 +106,11 @@ async function main() {
   // ============================================
   // TELEGRAM BOT + LLM
   // ============================================
-  const ClaudeClient = require('./services/llm/claude-client');
+  const LLMClient = require('./services/llm/claude-client');
   const LlmRateLimiter = require('./services/llm/rate-limiter');
-  const claudeClient = new ClaudeClient(config);
+  const llmClient = new LLMClient(config);
   const llmRateLimiter = new LlmRateLimiter();
-  const bot = createBot(claudeClient, llmRateLimiter);
+  const bot = createBot(llmClient, llmRateLimiter);
   const notifications = new NotificationService(bot);
 
   // ============================================

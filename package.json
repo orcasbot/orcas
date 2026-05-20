@@ -16,7 +16,6 @@
     "test": "jest --forceExit --detectOpenHandles"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.88.0",
     "@prisma/client": "^5.22.0",
     "@sentry/node": "^10.38.0",
     "@upstash/redis": "^1.36.2",

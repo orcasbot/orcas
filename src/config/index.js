@@ -9,7 +9,8 @@ const envSchema = z.object({
   JWT_EXPIRES_IN: z.string().min(1),
   TELEGRAM_BOT_TOKEN: z.string().min(1),
   BASE_RPC_URL: z.string().url(),
-  ANTHROPIC_API_KEY: z.string().min(1),
+  LLM_BASE_URL: z.string().url(),
+  LLM_API_KEY: z.string().min(1),
   ENCRYPTION_KEY: z.string().min(64, 'ENCRYPTION_KEY must be 64-char hex (32 bytes)'),
   // Optional
   TREASURY_WALLET: z.string().optional(),
@@ -108,9 +109,10 @@ const config = {
     botUsername: process.env.TELEGRAM_BOT_USERNAME || 'OrcasBot',
   },
 
-  claude: {
-    apiKey: process.env.ANTHROPIC_API_KEY,
-    model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-6',
+  llm: {
+    baseUrl: process.env.LLM_BASE_URL,
+    apiKey: process.env.LLM_API_KEY,
+    model: process.env.LLM_MODEL || 'mimo-v2.5-pro',
     maxTokens: parseInt(process.env.LLM_MAX_TOKENS || '1024'),
   },
 
