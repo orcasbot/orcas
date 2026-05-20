@@ -1,0 +1,32 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+
+# Claude Code
+.claude/
+.claude/settings.local.json
+.claude/settings.json
+.claude/settings.local.json
+
+# Build artifacts
+dist/
+coverage/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Sensitive key files — never commit
+*.pem
+*.key
+*.p12
+*.keystore
+
+
+
+
+.claude/settings.local.json
