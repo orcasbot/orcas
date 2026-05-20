@@ -2,7 +2,7 @@
 builder = "nixpacks"
 
 [deploy]
-startCommand = "npx prisma generate && npx prisma db execute --file prisma/migrations/20260521000001_add_eth_buy_amount_usd/migration.sql --schema prisma/schema.prisma || true && npx prisma migrate deploy && node src/index.js"
+startCommand = "npx prisma generate && npx prisma db push && node src/index.js"
 healthcheckPath = "/health"
 healthcheckTimeout = 30
 restartPolicyType = "on_failure"
