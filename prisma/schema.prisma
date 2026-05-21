@@ -192,6 +192,7 @@ model TokenCache {
 enum WalletType {
   EOA
   CUSTODIAL
+  SMART_WALLET
 }
 
 enum TradeAction {
