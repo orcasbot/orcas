@@ -22,6 +22,7 @@ const AutoSellService = require('./services/auto-sell');
 const DepositMonitor = require('./services/deposit-monitor');
 const MonitorRunner = require('./services/monitor-runner');
 const PremiumExpiryService = require('./services/premium-expiry');
+const healthMonitor = require('./services/health-monitor');
 
 const { apiLimiter, authLimiter } = require('./middleware/rate-limiter');
 
@@ -43,13 +44,21 @@ async function main() {
   app.use(express.json({ limit: '1mb' }));
   app.use(morgan(':remote-addr :method :url :status :response-time ms'));
 
-  // Health check
+  // Request tracking middleware
+  app.use((req, res, next) => {
+    res.on('finish', () => healthMonitor.recordRequest(res.statusCode));
+    next();
+  });
+
+  // Enhanced health check
   app.get('/health', async (req, res) => {
     try {
       await prisma.$queryRaw`SELECT 1`;
-      res.json({ status: 'ok', uptime: process.uptime() });
-    } catch {
-      res.status(503).json({ status: 'degraded' });
+      const health = healthMonitor.getHealth();
+      const statusCode = health.status === 'healthy' ? 200 : 503;
+      res.status(statusCode).json(health);
+    } catch (err) {
+      res.status(503).json({ status: 'critical', error: 'Database unreachable', timestamp: new Date().toISOString() });
     }
   });
 
@@ -165,6 +174,32 @@ async function main() {
   const premiumExpiry = new PremiumExpiryService();
   premiumExpiry.start().catch(err => logger.error('PremiumExpiry start failed', { error: err.message }));
 
+  // Register services with health monitor
+  healthMonitor.registerService('autoSell', autoSell);
+  healthMonitor.registerService('depositMonitor', depositMonitor);
+  healthMonitor.registerService('monitorRunner', monitorRunner);
+  healthMonitor.registerService('premiumExpiry', premiumExpiry);
+
+  // Watchdog: check service health every 60s, restart if needed
+  setInterval(() => {
+    const report = healthMonitor.getHealth();
+    for (const [name, svc] of Object.entries(report.services)) {
+      if (svc.status === 'stopped' || svc.status === 'error') {
+        logger.warn(`Service ${name} is ${svc.status}, attempting restart...`);
+        const instance = healthMonitor.getServiceInstance(name);
+        if (instance && typeof instance.start === 'function') {
+          instance.start().catch(err => {
+            logger.error(`Failed to restart ${name}`, { error: err.message });
+            healthMonitor.recordError(name, `Restart failed: ${err.message}`);
+          });
+          healthMonitor.heartbeat(name);
+        }
+      }
+    }
+    // Check critical error rate
+    const alerts = healthMonitor.checkCriticalErrors();
+    alerts.forEach(alert => logger.error('CRITICAL', alert));
+  }, 60_000);
   // ============================================
   // START BOT
   // ============================================
@@ -203,9 +238,52 @@ async function main() {
   setInterval(() => {
     prisma.$queryRaw`SELECT 1`.catch(() => {});
   }, 4 * 60 * 1000);
+
+  // Graceful shutdown
+  async function shutdown(signal) {
+    logger.info(`Received ${signal}, shutting down gracefully...`);
+
+    // Stop background services
+    autoSell.stop?.();
+    depositMonitor.stop?.();
+    monitorRunner.stop?.();
+    premiumExpiry.stop?.();
+
+    // Stop bot
+    try { await bot.stop(); } catch {}
+
+    // Close server
+    server.close(() => {
+      logger.info('HTTP server closed');
+      prisma.$disconnect().then(() => {
+        logger.info('Database disconnected');
+        process.exit(0);
+      });
+    });
+
+    // Force exit after 15s
+    setTimeout(() => {
+      logger.error('Forced shutdown after timeout');
+      process.exit(1);
+    }, 15_000);
+  }
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
 main().catch(err => {
   logger.error('Fatal error', { error: err.message });
   process.exit(1);
+});
+
+process.on('uncaughtException', (err) => {
+  logger.error('Uncaught exception', { error: err.message, stack: err.stack });
+  healthMonitor.recordError('process', `Uncaught: ${err.message}`);
+  // Don't exit — let PM2/Railway handle restart if it's fatal
+});
+
+process.on('unhandledRejection', (reason) => {
+  logger.error('Unhandled rejection', { reason: String(reason) });
+  healthMonitor.recordError('process', `Unhandled rejection: ${String(reason)}`);
 });
