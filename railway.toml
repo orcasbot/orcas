@@ -2,7 +2,7 @@
 builder = "nixpacks"
 
 [deploy]
-startCommand = "rm -rf node_modules/.prisma && npx prisma generate && npx prisma db push && node src/index.js"
+startCommand = "rm -rf node_modules/.prisma && npx prisma generate && npx prisma db push --accept-data-loss && node src/index.js"
 healthcheckPath = "/health"
 healthcheckTimeout = 30
 restartPolicyType = "on_failure"
